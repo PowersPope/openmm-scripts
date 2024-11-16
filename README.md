@@ -1,15 +1,14 @@
 # openmm-scripts
-Helpful python scripts written to be able to easily submit an MD trajectory submitted to either a GPU or CPU on a cluster or local pc. 
+Helpful python scripts written to be able to easily submit an MD trajectory submitted to either a GPU or CPU on a cluster or local pc.
+
 Andrew Powers (apowers4@uoregon.edu OR apowers@flatironinstitute.org)
 
 
 ## Repo Setup
----
 - `md_complex.py`: This is for running a target + peptide MD trajectory. This can be done for some specified nubmer of steps or a production run of 100ns.
 - `md_monomer.py`: This is for running a monomer MD trajectory. This can be done for some specified nubmer of steps or a production run of 100ns.
 
 ### Flags
----
 ```
 p.add_argument("--file", type=str, help="Path to Complex (target + cyclic peptide).")
 p.add_argument("--output-dir", type=str, default="out/", help="Directory to store output files. Will generate dir, if not yet created.")
@@ -27,5 +26,4 @@ p.add_argument("--pdbfix", action="store_true", help="Perform PDB cleanup first.
 
 
 ### Version
----
 `0.0.1`
