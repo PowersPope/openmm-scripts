@@ -5,10 +5,13 @@ import openmm.app as openmm_app
 import openmm
 from openmm.unit import *
 
+from md_helper import Reporter
+
 # Python Tools
 import argparse
 from sys import stdout
 import os
+from collections import defaultdict
 
 ### Collect arguments
 p = argparse.ArgumentParser(description="Run an Amber MD trajectory to determine macrocycle stability. Assumption is that Chain B is macrocycle.",
@@ -22,7 +25,9 @@ p.add_argument("--timestep", type=float, default=2.0, help="Time step in femtose
 p.add_argument("--total-steps", type=int, default=30_000, help="Total number of steps to take in Simulation")
 p.add_argument("--postfix-filename", type=str, default="out", help="Specify this to make your output .pdb and .dcd unique")
 p.add_argument("--production", action="store_true", help="Specify if you want to run a production NS run, if not only PS are run.")
+p.add_argument("--cyclic", action="store_true", help="Specify if you want the peptide to be cyclic.")
 p.add_argument("--debug", action="store_true", help="Specify if you want output to STDOUT during Production run for testing.")
+p.add_argument("--gpu", action="store_true", help="Specify if you want to run on a GPU")
 args = p.parse_args()
 
 # generate our output path if not yet created
@@ -47,17 +52,18 @@ modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0]
 print("After only peptide selection:", modeller.topology) #print after 
 
 
-print("Adding N-C Peptide Bond...")
-residue_all = defaultdict(list)
-for i, c in enumerate(modeller.topology.chains()):
-    residue_all[i].append([r for r in c.residues()])
-# Add our cyclic bond to our modeller object
-residues = residue_all[1][0]
-N_term = [i for i in residues[0].atoms() if i.name == "N"][0]
-C_term = [i for i in residues[-1].atoms() if i.name == "C"][0]
-modeller.topology.addBond(N_term, C_term)
+if args.cyclic:
+    print("Adding N-C Peptide Bond...")
+    residue_all = defaultdict(list)
+    for i, c in enumerate(modeller.topology.chains()):
+        residue_all[i].extend([r for r in c.residues()])
+    # Add our cyclic bond to our modeller object
+    residues = residue_all[0]
+    N_term = [i for i in residues[0].atoms() if i.name == "N"][0]
+    C_term = [i for i in residues[-1].atoms() if i.name == "C"][0]
+    modeller.topology.addBond(N_term, C_term)
 
-print("Topology Modeller:", modeller.topology)
+    print("Topology Modeller:", modeller.topology)
     
 # Grab and apply our forcefield amber14
 forcefield = openmm_app.ForceField("amber14-all.xml", "amber14/tip4pew.xml")
@@ -69,14 +75,15 @@ system = forcefield.createSystem(
     modeller.topology,
     nonbondedMethod=openmm_app.PME,
     nonbondedCutoff= 1 * nanometer,
-    constraints=openmm_app.HBonds
+    constraints=openmm_app.HBonds,
+    removeCMMotion=False,
 )
 integrator = openmm.LangevinIntegrator(temperature, 1 / picosecond, 2*femtoseconds)
 simulation = openmm_app.Simulation(
     modeller.topology,
     system, 
     integrator, 
-    openmm.Platform.getPlatformByName('CUDA') if args.production else openmm.Platform.getPlatformByName('CPU'),
+    openmm.Platform.getPlatformByName('CUDA') if args.gpu else openmm.Platform.getPlatformByName('CPU'),
 )
 
 n_platforms = openmm.Platform.getNumPlatforms()
@@ -84,22 +91,6 @@ for i in range(n_platforms):
     print(openmm.Platform.getPlatform(i).getName())
 
 simulation.context.setPositions(modeller.positions)
-
-# Define a subclass of Minimization Reporter
-class Reporter(openmm.MinimizationReporter):
-    interval = 10 # report interval
-    energies = [] # array to record progress
-    def report(self, iteration, x, grad, args):
-        # print current system energy to screen 
-        if iteration % self.interval == 0:
-            print(iteration, args['system energy'])
-
-        # save energy at each iteration to an array we can use later
-        self.energies.append(args['system energy'])
-
-        # The report method must return a bool specifying if minimization should be stopped. 
-        # You can use this functionality for early termination.
-        return False
 
 # Create an instance of our reporter
 reporter = Reporter()
@@ -154,7 +145,7 @@ if args.production:
 else:
     print("---- Test Level Run for 200 ps ----")
     simulation.reporters = []
-    simulation.reporters.append(os.path.join(args.output_dir, openmm_app.DCDReporter(f"traj-{args.postfix_filename}.dcd"), 10))
+    simulation.reporters.append(openmm_app.DCDReporter(os.path.join(args.output_dir, f"traj-{args.postfix_filename}.dcd"), 10))
     simulation.reporters.append(
         openmm_app.StateDataReporter(stdout, 100, step=True, temperature=True, elapsedTime=True)
     )
