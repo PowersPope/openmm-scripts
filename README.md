@@ -1,5 +1,6 @@
 # openmm-scripts
 Helpful python scripts written to be able to easily submit an MD trajectory submitted to either a GPU or CPU on a cluster or local pc.
+These can be used for assessing the kinematics/rigidity of a peptide or how well of a binder it would be given some constant force pulling it off your desired target.
 
 Andrew Powers (apowers4@uoregon.edu OR apowers@flatironinstitute.org)
 
@@ -7,6 +8,7 @@ Andrew Powers (apowers4@uoregon.edu OR apowers@flatironinstitute.org)
 ## Repo Setup
 - `md_complex.py`: This is for running a target + peptide MD trajectory. This can be done for some specified nubmer of steps or a production run of 100ns.
 - `md_monomer.py`: This is for running a monomer MD trajectory. This can be done for some specified nubmer of steps or a production run of 100ns.
+- `md_helper.py`: This contains helper scripts for both `complex` and `monomer`
 
 ### Flags
 ```

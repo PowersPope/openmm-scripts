@@ -47,7 +47,8 @@ print("Loading in PDB:", pdb.topology) # Print Topology before the cyclic bond
 
 # Delete Target, as we want to test the monomers stability
 modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
-modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0])
+if len([c for c in modeller.topology.chains()]) > 1:
+    modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0])
     
 print("After only peptide selection:", modeller.topology) #print after 
 
