@@ -4,6 +4,11 @@ These can be used for assessing the kinematics/rigidity of a peptide or how well
 
 Andrew Powers (apowers4@uoregon.edu OR apowers@flatironinstitute.org)
 
+## Install OpenMM Conda Environment
+You can use this command to install the necessary environment to run the scripts below:
+```
+conda env create -f openmm_env.yml
+```
 
 ## Repo Setup
 - `md_complex.py`: This is for running a target + peptide MD trajectory. This can be done for some specified nubmer of steps or a production run of 100ns.

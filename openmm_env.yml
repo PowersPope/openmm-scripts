@@ -1,0 +1,35 @@
+name: openmm
+channels:
+  - conda-forge
+  - omnia
+  - bioconda
+  - https://levinthal:paradox@conda.graylab.jhu.edu
+dependencies:
+  - ipywidgets
+  - git
+  - nglview
+  - ipympl
+  - ruff
+  - parmed
+  - openmm
+  - pymbar
+  - jedi-language-server
+  - cudatoolkit
+  - openbabel
+  - jupyterlab
+  - pandas
+  - jax
+  - rdkit
+  - jupyter-resource-usage
+  - pip
+  - jupyterlab-git
+  - numpy
+  - matplotlib
+  - pdbfixer
+  - jupyterlab-lsp
+  - mdtraj
+  - scipy
+  - python
+  - pre-commit
+  - python-lsp-ruff
+  - openmmtools
