@@ -4,6 +4,7 @@
 import openmm.app as openmm_app
 import openmm
 from openmm.unit import *
+import pdbfixer
 
 from md_helper import Reporter
 
@@ -28,11 +29,43 @@ p.add_argument("--production", action="store_true", help="Specify if you want to
 p.add_argument("--cyclic", action="store_true", help="Specify if you want the peptide to be cyclic.")
 p.add_argument("--debug", action="store_true", help="Specify if you want output to STDOUT during Production run for testing.")
 p.add_argument("--gpu", action="store_true", help="Specify if you want to run on a GPU")
+p.add_argument("--run-without-changes", action="store_true", help="Specify if you want to simply run something without deleting the target")
+p.add_argument("--peptide-chain", type=int, default=0, help="Chain (int) that is our peptide of interest (if applying --cyclic)")
+p.add_argument("--pdbfix", action="store_true", help="Perform PDB cleanup first.")
 args = p.parse_args()
 
 # generate our output path if not yet created
 if not os.path.exists(args.output_dir):
     os.mkdir(args.output_dir)
+
+# init a blank file name
+outfile_name = ''
+
+id_dict = dict(
+    zip(
+        [0,1,2,3,4,5,6,7,8,9,10],
+        ['A','B','C','D','E','F','G','H','I','J']
+    )
+)
+
+### Fix first
+if args.pdbfix:
+    fixer = pdbfixer.PDBFixer(args.file)
+    fixer.findMissingResidues()
+    print(fixer.missingResidues)
+    if not args.cyclic:
+        for chain in fixer.topology.chains():
+            if chain.id == id_dict[args.peptide_chain]:
+                lastIndexInChain = [i for i, res in enumerate(chain.residues())][-1]
+                fixer.missingResidues[(chain.index, lastIndexInChain + 1)] = ["NME"]
+                fixer.missingResidues[(chain.index, 0)] = ["ACE"]
+    print(fixer.missingResidues)
+    # fixer.removeHeterogens(True) # remove all heterogens including water since False
+    fixer.findMissingAtoms()
+    fixer.addMissingAtoms()
+    # fixer.addMissingHydrogens(7.0)
+    outfile_name = os.path.join(args.output_dir, f"{args.file.split('.pdb')[0]}-fixed.pdb")
+    openmm_app.PDBFile.writeFile(fixer.topology, fixer.positions, open(outfile_name, 'w'))
 
 #### Setup
 # Simulation Settings
@@ -41,16 +74,19 @@ temperature = args.temperature * kelvin
 timstep = args.timestep*femtoseconds
 
 # Load in pdb of interest
-pdb = openmm_app.PDBFile(args.file)
+pdb = openmm_app.PDBFile(outfile_name if args.pdbfix else args.file)
 
 print("Loading in PDB:", pdb.topology) # Print Topology before the cyclic bond
 
-# Delete Target, as we want to test the monomers stability
-modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
-if len([c for c in modeller.topology.chains()]) > 1:
-    modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0])
-    
-print("After only peptide selection:", modeller.topology) #print after 
+if not args.run_without_changes:
+    # Delete Target, as we want to test the monomers stability
+    modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
+    if len([c for c in modeller.topology.chains()]) > 1:
+        modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0])
+        
+    print("After only peptide selection:", modeller.topology) #print after 
+else:
+    modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
 
 
 if args.cyclic:
@@ -59,15 +95,21 @@ if args.cyclic:
     for i, c in enumerate(modeller.topology.chains()):
         residue_all[i].extend([r for r in c.residues()])
     # Add our cyclic bond to our modeller object
-    residues = residue_all[0]
+    residues = residue_all[args.peptide_chain]
     N_term = [i for i in residues[0].atoms() if i.name == "N"][0]
     C_term = [i for i in residues[-1].atoms() if i.name == "C"][0]
     modeller.topology.addBond(N_term, C_term)
 
     print("Topology Modeller:", modeller.topology)
+
+
+print("BEFORE SOLVENT:", modeller.topology)
+
+print([i for i in modeller.topology.residues()])
     
 # Grab and apply our forcefield amber14
 forcefield = openmm_app.ForceField("amber14-all.xml", "amber14/tip4pew.xml")
+modeller.addHydrogens(forcefield)
 # Max our solvent explicit and water
 modeller.addSolvent(forcefield, model="tip4pew", padding = 1 * nanometer, neutralize = True)
 
