@@ -10,6 +10,58 @@ import os
 
 
 ## Functions
+def gen_cycpep_target_modellers(input, peptide_chain: int):
+    """
+    Generate two Modeller objects that are Target and Peptide
+
+    PARAMS
+    ------
+    :input: OpenMM topology object.
+    :peptide_chain: Chain number for our peptide
+
+    RETURNS
+    -------
+    :target_modeller: Modeller Toplogy that has only our Non Peptide Chain/s
+    :peptide_modeller: Modeller Toplogy that has only our Peptide Chain
+    """
+    # make a modeller of our target topology
+    target_modeller = openmm.app.Modeller(input.topology, input.positions)
+    peptide_modeller = openmm.app.Modeller(input.topology, input.positions)
+
+    # define holding lists
+    del_pep, del_target = list(), list()
+    for i, c in enumerate(target_modeller.topology.chains()):
+        for r in c.residues():
+            if i != peptide_chain:
+                del_target.extend(r.atoms())
+            else:
+                del_pep.extend(r.atoms())
+    print(del_pep)
+    target_modeller.delete(del_pep)
+    peptide_modeller.delete(del_target)
+    return target_modeller, peptide_modeller
+
+def is_bonded(topology, atom1, atom2):
+    """
+    Checks if a bond exists between two given atoms in an OpenMM topology. 
+    
+    PARAMS
+    ------
+    :topology: OpenMM topology object. 
+    :atom1: The first atom.
+    :atom2: The second atom.
+    
+    RETURNS
+    -------
+    :bool: True if a bond exists between atom1 and atom2, False otherwise. 
+    """
+    for bond in topology.bonds():
+        if ((bond[0].name == atom1.name) and (bond[0].residue.index == atom1.residue.index) and (bond[1].name == atom2.name) and(bond[1].residue.index == atom2.residue.index)) or \
+            ((bond[1].name == atom1.name) and (bond[1].residue.index == atom1.residue.index) and (bond[0].name == atom2.name) and(bond[0].residue.index == atom2.residue.index)):
+            print(bond, atom1, bond[0].name == atom1.name, bond[0].residue.index == atom1.residue.index)
+            return True
+    return False 
+
 def compute_com(positions, system, atom_idx) -> np.array:
     """Compute the Center of Mass for our given atom_idx
 

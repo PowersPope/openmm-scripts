@@ -6,7 +6,7 @@ import openmm
 from openmm.unit import *
 import pdbfixer
 
-from md_helper import Reporter
+from md_helper import Reporter, is_bonded, gen_cycpep_target_modellers
 
 # Python Tools
 import argparse
@@ -23,7 +23,9 @@ p.add_argument("--output-dir", type=str, default="out/", help="Directory to stor
 p.add_argument("--temperature", type=float, default=300.0, help="Temperature in Kelvin")
 p.add_argument("--pressure", type=float, default=1.0, help="Atmospheric Pressure in atm")
 p.add_argument("--timestep", type=float, default=2.0, help="Time step in femtoseconds")
-p.add_argument("--total-steps", type=int, default=30_000, help="Total number of steps to take in Simulation")
+p.add_argument("--total-steps-nonproduction", type=int, default=30_000, help="Total number of steps to take in the nonproduction Simulation (Default is 200ps)")
+p.add_argument("--total-steps-production", type=int, default=50_000_000, help="Total number of steps to take in the production Simulation (Default is 100ns = 50,000,000 * 2fs)")
+p.add_argument("--production-report-every-n", type=int, default=5000, help="Every designated time step it will take a frame and report it.")
 p.add_argument("--postfix-filename", type=str, default="out", help="Specify this to make your output .pdb and .dcd unique")
 p.add_argument("--production", action="store_true", help="Specify if you want to run a production NS run, if not only PS are run.")
 p.add_argument("--cyclic", action="store_true", help="Specify if you want the peptide to be cyclic.")
@@ -80,36 +82,51 @@ print("Loading in PDB:", pdb.topology) # Print Topology before the cyclic bond
 
 if not args.run_without_changes:
     # Delete Target, as we want to test the monomers stability
-    modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
-    if len([c for c in modeller.topology.chains()]) > 1:
-        modeller.delete([res for res in pdb.topology.residues() if res.chain.index == 0])
+    # modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
+    # if len([c for c in modeller.topology.chains()]) > 1:
+    #     modeller.delete([res for res in pdb.topology.residues() if res.chain.index != args.peptide_chain])
+    modeller, peptide_modeller = gen_cycpep_target_modellers(pdb, args.peptide_chain)
         
     print("After only peptide selection:", modeller.topology) #print after 
+elif args.run_without_changes and args.cyclic:
+    modeller, peptide_modeller = gen_cycpep_target_modellers(pdb, args.peptide_chain)
+    print("TARGET MODELLER:", modeller.topology)
+    print("PEPTIDE MODELLER:", peptide_modeller.topology)
 else:
     modeller = openmm_app.Modeller(pdb.topology, pdb.positions)
 
+true_pep_idx = args.peptide_chain if args.run_without_changes else 0
 
 if args.cyclic:
     print("Adding N-C Peptide Bond...")
-    residue_all = defaultdict(list)
-    for i, c in enumerate(modeller.topology.chains()):
-        residue_all[i].extend([r for r in c.residues()])
+    delete_atoms = ["OXT"]
+    # residue_all = defaultdict(list)
+    # for i, c in enumerate(modeller.topology.chains()):
+        # residue_all[i].extend([r for r in c.residues()])
+    residues = [r for r in peptide_modeller.topology.residues()]
     # Add our cyclic bond to our modeller object
-    residues = residue_all[args.peptide_chain]
+    # residues = residue_all[true_pep_idx]
+    print("Topology Peptide Modeller:", peptide_modeller.topology)
+    d_idx = [i for i in residues[-1].atoms() if i.name in delete_atoms]
     N_term = [i for i in residues[0].atoms() if i.name == "N"][0]
     C_term = [i for i in residues[-1].atoms() if i.name == "C"][0]
-    modeller.topology.addBond(N_term, C_term)
+    peptide_modeller.topology.addBond(N_term, C_term)
+    peptide_modeller.delete(d_idx)
+    print("Topology Modeller:", peptide_modeller.topology)
 
-    print("Topology Modeller:", modeller.topology)
 
+# print("BEFORE SOLVENT:", modeller.topology)
 
-print("BEFORE SOLVENT:", modeller.topology)
-
-print([i for i in modeller.topology.residues()])
+# print([i for i in modeller.topology.residues()])
     
 # Grab and apply our forcefield amber14
 forcefield = openmm_app.ForceField("amber14-all.xml", "amber14/tip4pew.xml")
-modeller.addHydrogens(forcefield)
+    # Might add an explicit delete call here where it deletes only the N hydrogens, so that I don't have to make this conditional
+if args.cyclic and args.run_without_changes:
+    modeller.addHydrogens(forcefield)
+
+modeller.add(peptide_modeller.topology, peptide_modeller.positions)
+print("Modeller FINAL:", modeller.topology)
 # Max our solvent explicit and water
 modeller.addSolvent(forcefield, model="tip4pew", padding = 1 * nanometer, neutralize = True)
 
@@ -160,16 +177,16 @@ if args.production:
     print("---- Production Level Run for 100ns ----")
 
     # set the run length
-    run_length = 50_000_000 # 50000000 * 2 fs = 100 ns
+    run_length = args.total_steps_production # default:50000000 * 2 fs = 100 ns
 
     # Set up reporter
     simulation.reporters = []
     # size stability
-    simulation.reporters.append(openmm_app.DCDReporter(os.path.join(args.output_dir, f"traj-{args.postfix_filename}.dcd"), 5000))
+    simulation.reporters.append(openmm_app.DCDReporter(os.path.join(args.output_dir, f"traj-{args.postfix_filename}.dcd"), args.production_report_every_n))
     # Log simulation
     simulation.reporters.append(
         openmm_app.StateDataReporter(
-            os.path.join(args.output_dir, f"simulation-{args.postfix_filename}.log"), 5000,
+            os.path.join(args.output_dir, f"simulation-{args.postfix_filename}.log"), args.production_report_every_n,
             step = True, potentialEnergy = True, temperature = True,
             progress = True, remainingTime=True, speed=True,
             totalSteps=run_length, time = True,
@@ -204,4 +221,4 @@ else:
             temperature=True,
         )
     )
-    simulation.step(args.total_steps)
+    simulation.step(args.total_steps_nonproduction)
