@@ -133,7 +133,7 @@ if args.smd:
     #     # pulling_velocity=10.,
     # )
 
-system.addForce(custom_pull_force)
+    system.addForce(custom_pull_force)
 
 integrator = openmm.LangevinIntegrator(temperature, 1 / picosecond, 2*femtoseconds)
 simulation = openmm_app.Simulation(
